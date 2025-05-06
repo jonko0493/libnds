@@ -42,6 +42,7 @@ typedef struct {
 #define R_ARM_BASE_PREL     25
 #define R_ARM_GOT_BREL      26
 #define R_ARM_CALL          28
+#define R_ARM_JUMP24        29
 
 void *dlopen(const char *file, int mode)
 {
@@ -399,6 +400,73 @@ void *dlopen(const char *file, int mode)
                         *ptr = (*ptr & 0xFF000000)
                              | ((jump_value >> 2) & 0x00FFFFFF);
                     }
+                }
+            }
+            
+            else if (rel_type == R_ARM_JUMP24)
+            {
+                dsl_symbol *sym = &(sym_table->symbol[rel_symbol]);
+
+                // If the symbol is in the dynamic library, we don't need to do
+                // anything because BL/BLX instructions are relative, and all
+                // the sources and destinations are in the same section, so
+                // moving the section around doesn't matter. We only need to fix
+                // symbols that are in the main binary.
+
+                if (sym->attributes & DSL_SYMBOL_MAIN_BINARY)
+                {
+                    // We need to adjust the branch to jump to the right symbol
+                    // in the main binary. The range of BL/BLX is +/-32 MB, so
+                    // it will always work if the source and destination are in
+                    // main RAM.
+
+                    uint32_t bl_addr = (uint32_t)(loaded_mem + rel.r_offset);
+                    uint32_t sym_addr = sym->value;
+#if 0
+                    // Note: In ARM7 it isn't possible to do interworking calls
+                    // (from ARM to Thumb) because BLX doesn't exist. This check
+                    // will be required if we want to enable dynamic libraries
+                    // on the ARM7.
+                    if ((sym_addr & 1) == 0)
+                    {
+                        dl_err_str = "R_ARM_JUMP24 can't switch to Thumb in ARMv4";
+                        goto cleanup;
+                    }
+#endif
+                    bool to_arm = false;
+                    if ((sym_addr & 1) == 0)
+                        to_arm = true;
+
+                    int32_t jump_value = sym_addr - bl_addr;
+
+                    if (to_arm)
+                        jump_value -= 6;
+                    else
+                        jump_value -= 8;
+
+                    if ((jump_value > 0x7FFFFF) | (jump_value <= -0x7FFFFF))
+                    {
+                        dl_err_str = "R_ARM_JUMP24 outside of range";
+                        goto cleanup;
+                    }
+
+                    // BL/BLX is basically a relative jump with a signed offset.
+                    // BL stays in ARM mode, BLX forces a switch to Thumb mode.
+                    //
+                    // BL:
+                    //     jump address = nnn << 2
+                    //     cccc_1011_nnnn_nnnn_nnnn_nnnn_nnnn_nnnn
+                    //
+                    // BLX (ARMv5 only)
+                    //
+                    //     jump address = nnn << 2 | h << 1
+                    //     1111_101h_nnnn_nnnn_nnnn_nnnn_nnnn_nnnn
+
+                    uint32_t *ptr = (uint32_t *)(loaded_mem + rel.r_offset);
+
+                    // Stay in ARM, BL
+                    *ptr = (*ptr & 0xFF000000)
+                            | ((jump_value >> 2) & 0x00FFFFFF);
                 }
             }
             else
