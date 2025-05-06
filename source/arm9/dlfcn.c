@@ -44,6 +44,7 @@ typedef struct {
 #define R_ARM_CALL          28
 #define R_ARM_JUMP24        29
 #define R_ARM_TLS_IE32      107
+#define R_ARM_TLS_LE32      108
 
 void *dlopen(const char *file, int mode)
 {
@@ -464,7 +465,7 @@ void *dlopen(const char *file, int mode)
                             | ((jump_value >> 2) & 0x00FFFFFF);
                 }
             }
-            else if (rel_type == R_ARM_TLS_IE32)
+            else if (rel_type == R_ARM_TLS_IE32 || rel_type == R_ARM_TLS_LE32)
             {
                 // I'm hoping we can just leave these be
             }
