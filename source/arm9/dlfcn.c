@@ -43,6 +43,7 @@ typedef struct {
 #define R_ARM_GOT_BREL      26
 #define R_ARM_CALL          28
 #define R_ARM_JUMP24        29
+#define R_ARM_TLS_IE32      107
 
 void *dlopen(const char *file, int mode)
 {
@@ -402,7 +403,6 @@ void *dlopen(const char *file, int mode)
                     }
                 }
             }
-            
             else if (rel_type == R_ARM_JUMP24)
             {
                 dsl_symbol *sym = &(sym_table->symbol[rel_symbol]);
@@ -450,17 +450,12 @@ void *dlopen(const char *file, int mode)
                         goto cleanup;
                     }
 
-                    // BL/BLX is basically a relative jump with a signed offset.
-                    // BL stays in ARM mode, BLX forces a switch to Thumb mode.
+                    // BL is basically a relative jump with a signed offset.
+                    // R_ARM_JUMP24 only calls ARM routines, so we can ignore the Thumb option here.
                     //
                     // BL:
                     //     jump address = nnn << 2
                     //     cccc_1011_nnnn_nnnn_nnnn_nnnn_nnnn_nnnn
-                    //
-                    // BLX (ARMv5 only)
-                    //
-                    //     jump address = nnn << 2 | h << 1
-                    //     1111_101h_nnnn_nnnn_nnnn_nnnn_nnnn_nnnn
 
                     uint32_t *ptr = (uint32_t *)(loaded_mem + rel.r_offset);
 
@@ -468,6 +463,10 @@ void *dlopen(const char *file, int mode)
                     *ptr = (*ptr & 0xFF000000)
                             | ((jump_value >> 2) & 0x00FFFFFF);
                 }
+            }
+            else if (rel_type == R_ARM_TLS_IE32)
+            {
+                // I'm hoping we can just leave these be
             }
             else
             {
